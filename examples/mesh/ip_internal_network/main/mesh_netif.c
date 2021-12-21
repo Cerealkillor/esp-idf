@@ -341,8 +341,19 @@ static esp_netif_t* create_mesh_link_ap(void)
             .base = &base_cfg,
             .driver = NULL,
             .stack = ESP_NETIF_NETSTACK_DEFAULT_WIFI_AP };
+            
+    ESP_LOGD(TAG, "DHCPS flag %d", cfg.base.flags & ESP_NETIF_DHCP_SERVER)
     esp_netif_t * netif = esp_netif_new(&cfg);
     assert(netif);
+
+    esp_netif_dhcp_status_t status;
+    esp_err_t ret = esp_netif_dhcps_get_status(netif, &status);
+    if(ret != ESP_OK){
+        ESP_LOGE(TAG, "esp_netif_dhcps_get_status for if=%p failed with %d", netif, ret);
+    } else {
+        ESP_LOGD(TAG, "esp_netif_dhcps_get_status status: %d", status)
+    }
+
     return netif;
 }
 
