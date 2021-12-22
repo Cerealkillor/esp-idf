@@ -4,6 +4,11 @@ This example demonstrates how to use mesh to create a IP capable sub-network.
 As a demonstration all nodes publish their IP and their internal mesh layer to MQTT broker
 and uses internal communication at the same time
 
+## Changes
+* Added ping to REPL console
+* Removed everything related to MQTT / GPIO
+* Added timed print with debug infos
+
 ## Functionality
 
 This example uses experimental NAT feature to translate addresses/ports from an internal subnet, that is created 

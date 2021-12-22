@@ -93,7 +93,7 @@ static void receive_task(void *arg)
         }
         if (esp_mesh_is_root()) {
             if (data.proto == MESH_PROTO_AP) {
-                ESP_LOGD(TAG, "Root received: from: " MACSTR " to " MACSTR " size: %d",
+                ESP_LOGI(TAG, "Root received: from: " MACSTR " to " MACSTR " size: %d",
                          MAC2STR((uint8_t*)data.data) ,MAC2STR((uint8_t*)(data.data+6)), data.size);
                 if (netif_ap) {
                     // actual receive to TCP/IP stack
@@ -104,9 +104,9 @@ static void receive_task(void *arg)
             }
         } else {
             if (data.proto == MESH_PROTO_AP) {
-                ESP_LOGD(TAG, "Node AP should never receive data from mesh");
+                ESP_LOGE(TAG, "Node AP should never receive data from mesh");
             } else if (data.proto == MESH_PROTO_STA) {
-                ESP_LOGD(TAG, "Node received: from: " MACSTR " to " MACSTR " size: %d",
+                ESP_LOGI(TAG, "Node received: from: " MACSTR " to " MACSTR " size: %d",
                          MAC2STR((uint8_t*)data.data) ,MAC2STR((uint8_t*)(data.data+6)), data.size);
                 if (netif_sta) {
                     // actual receive to TCP/IP stack
@@ -341,19 +341,9 @@ static esp_netif_t* create_mesh_link_ap(void)
             .base = &base_cfg,
             .driver = NULL,
             .stack = ESP_NETIF_NETSTACK_DEFAULT_WIFI_AP };
-            
-    ESP_LOGD(TAG, "DHCPS flag %d", cfg.base.flags & ESP_NETIF_DHCP_SERVER)
+
     esp_netif_t * netif = esp_netif_new(&cfg);
     assert(netif);
-
-    esp_netif_dhcp_status_t status;
-    esp_err_t ret = esp_netif_dhcps_get_status(netif, &status);
-    if(ret != ESP_OK){
-        ESP_LOGE(TAG, "esp_netif_dhcps_get_status for if=%p failed with %d", netif, ret);
-    } else {
-        ESP_LOGD(TAG, "esp_netif_dhcps_get_status status: %d", status)
-    }
-
     return netif;
 }
 
@@ -399,6 +389,9 @@ esp_err_t mesh_netif_start_root_ap(bool is_root, uint32_t addr)
         set_dhcps_dns(netif_ap, addr);
         start_mesh_link_ap();
         ip_napt_enable(g_mesh_netif_subnet_ip.ip.addr, 1);
+        char str_ip[IP4ADDR_STRLEN_MAX];
+        esp_ip4addr_ntoa(&g_mesh_netif_subnet_ip.ip, str_ip, IP4ADDR_STRLEN_MAX);
+        ESP_LOGI(TAG, "Enabled PNAT for interface with %s", str_ip);
     }
     return ESP_OK;
 }
@@ -457,6 +450,7 @@ esp_err_t mesh_netifs_start(bool is_root)
             mesh_delete_if_driver(esp_netif_get_io_driver(netif_ap));
             esp_netif_destroy(netif_ap);
             netif_ap = NULL;
+            ESP_LOGW(TAG, "Destroyed netif_ap for node!");
         }
 
     }
