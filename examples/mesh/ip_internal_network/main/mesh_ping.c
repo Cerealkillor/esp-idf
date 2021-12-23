@@ -6,16 +6,6 @@
 #include <esp_console.h>
 #include "argtable3/argtable3.h"
 
-static struct {
-    struct arg_dbl *timeout;
-    struct arg_dbl *interval;
-    struct arg_int *data_size;
-    struct arg_int *count;
-    struct arg_int *tos;
-    struct arg_str *host;
-    struct arg_end *end;
-} ping_args;
-
 static void cmd_ping_on_ping_success(esp_ping_handle_t hdl, void *args)
 {
     uint8_t ttl;
@@ -63,6 +53,16 @@ static void cmd_ping_on_ping_end(esp_ping_handle_t hdl, void *args)
     esp_ping_delete_session(hdl);
 }
 
+static struct {
+    struct arg_dbl *timeout;
+    struct arg_dbl *interval;
+    struct arg_int *data_size;
+    struct arg_int *count;
+    struct arg_int *tos;
+    struct arg_str *host;
+    struct arg_end *end;
+} ping_args;
+
 static int do_ping_cmd(int argc, char **argv)
 {
     esp_ping_config_t config = ESP_PING_DEFAULT_CONFIG();
@@ -92,6 +92,8 @@ static int do_ping_cmd(int argc, char **argv)
     if (ping_args.tos->count > 0) {
         config.tos = (uint32_t)(ping_args.tos->ival[0]);
     }
+
+    config.task_stack_size = 4096;
 
     // parse IP address
     struct sockaddr_in6 sock_addr6;
