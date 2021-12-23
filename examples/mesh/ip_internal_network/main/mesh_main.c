@@ -78,8 +78,9 @@ static void print_stats(void* args){
         uint8_t stamac[MAC_ADDR_LEN];
         esp_wifi_get_mac(WIFI_IF_AP, apmac);
         esp_wifi_get_mac(WIFI_IF_STA, stamac);
-        ESP_LOGI(MESH_TAG, "[%s] LAYER: %1d | TYPE: %1d | IP:" IPSTR " | AP: " MACSTR " | STA: " MACSTR,
+        ESP_LOGI(MESH_TAG, "[%s] LAYER: %1d | TYPE: %1d | SSID: ESPM_%2X%2X%2X | IP:" IPSTR " | AP: " MACSTR " | STA: " MACSTR,
                  esp_mesh_is_root() ? "ROOT" : "NODE", esp_mesh_get_layer(), esp_mesh_get_type(),
+                 stamac[3], stamac[4], stamac[5],
                  IP2STR(&s_current_ip), MAC2STR(apmac), MAC2STR(stamac));
         vTaskDelay(1000 / portTICK_RATE_MS);
     }
