@@ -43,6 +43,11 @@ const esp_netif_ip_info_t g_mesh_netif_subnet_ip = {        // mesh subnet IP in
         .gw = { .addr = ESP_IP4TOADDR( 10, 0, 0, 1) },
         .netmask = { .addr = ESP_IP4TOADDR( 255, 255, 0, 0) },
 };
+const esp_netif_ip_info_t g_nonmesh_netif_subnet_ip = {        // mesh subnet IP info
+        .ip = { .addr = ESP_IP4TOADDR( 11, 0, 0, 1) },
+        .gw = { .addr = ESP_IP4TOADDR( 11, 0, 0, 1) },
+        .netmask = { .addr = ESP_IP4TOADDR( 255, 255, 0, 0) },
+};
 
 /*******************************************************
  *                Variable Definitions
@@ -159,6 +164,7 @@ static esp_err_t mesh_netif_transmit_from_root_ap(void *h, void *buffer, size_t 
         }
     } else {
         // Standard P2P
+        ESP_LOGD(TAG, "Sending to " MACSTR " %d bytes", MAC2STR(dest_addr.addr), data.size);
         esp_err_t err = esp_mesh_send(&dest_addr, &data, MESH_DATA_P2P, NULL, 0);
         if (err != ESP_OK) {
             ESP_LOGE(TAG, "Send with err code %d %s", err, esp_err_to_name(err));
@@ -175,7 +181,7 @@ static esp_err_t mesh_netif_transmit_from_root_ap_wrap(void *h, void *buffer, si
 static esp_err_t mesh_netif_transmit_from_node_sta(void *h, void *buffer, size_t len)
 {
     mesh_data_t data;
-    ESP_LOGD(TAG, "Sending to root, dest addr: " MACSTR ", size: %d" ,MAC2STR((uint8_t*)buffer), len);
+    ESP_LOGI(TAG, "Sending to root, dest addr: " MACSTR ", size: %d" ,MAC2STR((uint8_t*)buffer), len);
     data.data = buffer;
     data.size = len;
     data.proto = MESH_PROTO_AP; // Node's station transmits data to root's AP
@@ -452,6 +458,26 @@ esp_err_t mesh_netifs_start(bool is_root)
             netif_ap = NULL;
             ESP_LOGW(TAG, "Destroyed netif_ap for node!");
         }
+
+        ESP_LOGI(TAG, "Configuring node AP interface to support DHCP Server");
+        esp_netif_inherent_config_t base_cfg = ESP_NETIF_INHERENT_DEFAULT_WIFI_AP();
+        base_cfg.if_desc = "nonmesh_ap";
+        base_cfg.ip_info = &g_nonmesh_netif_subnet_ip;
+        esp_netif_config_t cfg = {
+                .base = &base_cfg,
+                .driver = NULL,
+                .stack = ESP_NETIF_NETSTACK_DEFAULT_WIFI_AP };
+
+        esp_netif_t *netif_myap = esp_netif_new(&cfg);
+        assert(netif_myap);
+        ESP_ERROR_CHECK(esp_netif_attach_wifi_station(netif_myap));
+        ESP_ERROR_CHECK(esp_wifi_set_default_wifi_sta_handlers());
+        uint8_t mac[MAC_ADDR_LEN];
+        esp_wifi_get_mac(WIFI_IF_AP, mac);
+        esp_netif_set_mac(netif_myap, mac);
+        esp_netif_action_start(netif_myap, NULL, 0, NULL);
+        ip_napt_enable(g_nonmesh_netif_subnet_ip.ip.addr, 1);
+        //ESP_ERROR_CHECK(esp_netif_dhcps_start(netif_myap));
 
     }
     return ESP_OK;
