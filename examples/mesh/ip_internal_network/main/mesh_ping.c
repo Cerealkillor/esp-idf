@@ -4,6 +4,7 @@
 #include "lwip/netdb.h"
 #include "lwip/sockets.h"
 #include <esp_console.h>
+#include <esp_wifi_types.h>
 #include "argtable3/argtable3.h"
 
 static void cmd_ping_on_ping_success(esp_ping_handle_t hdl, void *args)
@@ -122,6 +123,7 @@ static int do_ping_cmd(int argc, char **argv)
         freeaddrinfo(res);
     }
     config.target_addr = target_addr;
+    //config.interface = WIFI_IF_AP;
 
     /* set callback functions */
     esp_ping_callbacks_t cbs = {
@@ -137,7 +139,7 @@ static int do_ping_cmd(int argc, char **argv)
     return 0;
 }
 
-void register_ping(void)
+void register_ping_command(void)
 {
     ping_args.timeout = arg_dbl0("W", "timeout", "<t>", "Time to wait for a response, in seconds");
     ping_args.interval = arg_dbl0("i", "interval", "<t>", "Wait interval seconds between sending each packet");

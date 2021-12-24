@@ -8,6 +8,7 @@
 */
 #include <string.h>
 #include <esp_console.h>
+#include <lwip/lwip_napt.h>
 #include "esp_wifi.h"
 #include "esp_system.h"
 #include "esp_event.h"
@@ -35,8 +36,9 @@ static esp_console_repl_t *s_repl = NULL;
 /*******************************************************
  *                Function Definitions
  *******************************************************/
-void register_ping(void);
+void register_ping_command(void);
 void mesh_event_handler(void *arg, esp_event_base_t event_base, int32_t event_id, void *event_data);
+void register_leaf_command();
 
 void static recv_cb(mesh_addr_t *from, mesh_data_t *data)
 {
@@ -53,6 +55,10 @@ void ip_event_handler(void *arg, esp_event_base_t event_base,
     esp_netif_dns_info_t dns;
     ESP_ERROR_CHECK(esp_netif_get_dns_info(netif, ESP_NETIF_DNS_MAIN, &dns));
     mesh_netif_start_root_ap(esp_mesh_is_root(), dns.ip.u_addr.ip4.addr);
+    if(!esp_mesh_is_root()){
+        ESP_LOGI(MESH_TAG, "Enabling NAT for IP:" IPSTR, IP2STR(&event->ip_info.ip));
+        ip_napt_enable(event->ip_info.ip.addr , 1);
+    }
 #endif
 }
 
@@ -72,13 +78,14 @@ static void register_quit_command(void)
     };
     ESP_ERROR_CHECK(esp_console_cmd_register(&quit_command));
 }
+
 static void print_stats(void* args){
     while(1){
         uint8_t apmac[MAC_ADDR_LEN];
         uint8_t stamac[MAC_ADDR_LEN];
         esp_wifi_get_mac(WIFI_IF_AP, apmac);
         esp_wifi_get_mac(WIFI_IF_STA, stamac);
-        ESP_LOGI(MESH_TAG, "[%s] LAYER: %1d | TYPE: %1d | SSID: ESPM_%2X%2X%2X | IP:" IPSTR " | AP: " MACSTR " | STA: " MACSTR,
+        ESP_LOGI(MESH_TAG, "[%s] LAYER: %1d | TYPE: %1d | MESH_SSID: ESPM_%2X%2X%2X | IP:" IPSTR " | AP: " MACSTR " | STA: " MACSTR,
                  esp_mesh_is_root() ? "ROOT" : "NODE", esp_mesh_get_layer(), esp_mesh_get_type(),
                  stamac[3], stamac[4], stamac[5],
                  IP2STR(&s_current_ip), MAC2STR(apmac), MAC2STR(stamac));
@@ -142,7 +149,10 @@ void app_main(void)
         ESP_ERROR_CHECK(esp_console_new_repl_uart(&uart_config, &repl_config, &s_repl));
     #endif
     register_quit_command();
-    register_ping();
+    register_ping_command();
+    register_leaf_command();
+
+
     // start console REPL
     ESP_ERROR_CHECK(esp_console_start_repl(s_repl));
 }
