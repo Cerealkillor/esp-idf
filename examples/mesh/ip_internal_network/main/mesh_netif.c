@@ -59,7 +59,7 @@ static esp_netif_t *netif_ap = NULL;
 static bool receive_task_is_running = false;
 static mesh_addr_t s_route_table[CONFIG_MESH_ROUTE_TABLE_SIZE] = { 0 };
 static mesh_raw_recv_cb_t *s_mesh_raw_recv_cb = NULL;
-
+static bool leaf_mode = false;
 /*******************************************************
  *                Function Definitions
  *******************************************************/
@@ -115,9 +115,16 @@ static void receive_task(void *arg)
             } else if (data.proto == MESH_PROTO_STA) {
                 ESP_LOGI(TAG, "Node received: from: " MACSTR " to " MACSTR " size: %d",
                          MAC2STR((uint8_t*)data.data) ,MAC2STR((uint8_t*)(data.data+6)), data.size);
-                if (netif_sta) {
-                    // actual receive to TCP/IP stack
+
+                if(leaf_mode && netif_ap){
+                    ESP_LOGI(TAG, "Forwarding response to TCP/IP stack of AP interface!");
                     esp_netif_receive(netif_sta, data.data, data.size, NULL);
+                } else if (netif_sta) {
+                    // actual receive to TCP/IP stack
+                    ESP_LOGI(TAG, "Forwarding response to TCP/IP stack of STA interface!");
+                    esp_netif_receive(netif_sta, data.data, data.size, NULL);
+                } else {
+                    ESP_LOGE(TAG, "Dont know what to do with the packet!");
                 }
             }
         }
@@ -283,10 +290,9 @@ static void mesh_netif_init_station(void)
 
 // Init by default for both potential root and node
 //
-esp_err_t mesh_netifs_init(mesh_raw_recv_cb_t *cb)
+esp_err_t mesh_netifs_init()
 {
     mesh_netif_init_station();
-    s_mesh_raw_recv_cb = cb;
     return ESP_OK;
 
 }
@@ -396,10 +402,10 @@ esp_err_t mesh_netif_start_root_ap(bool is_root, uint32_t addr)
         esp_netif_attach(netif_ap, driver);
         set_dhcps_dns(netif_ap, addr);
         start_mesh_link_ap();
-        ip_napt_enable(g_mesh_netif_subnet_ip.ip.addr, 1);
-        char str_ip[IP4ADDR_STRLEN_MAX];
-        esp_ip4addr_ntoa(&g_mesh_netif_subnet_ip.ip, str_ip, IP4ADDR_STRLEN_MAX);
-        ESP_LOGI(TAG, "Enabled PNAT for interface with %s", str_ip);
+        //ip_napt_enable(g_mesh_netif_subnet_ip.ip.addr, 1);
+        //char str_ip[IP4ADDR_STRLEN_MAX];
+        //esp_ip4addr_ntoa(&g_mesh_netif_subnet_ip.ip, str_ip, IP4ADDR_STRLEN_MAX);
+        //ESP_LOGI(TAG, "Enabled PNAT for interface with %s", str_ip);
     }
     return ESP_OK;
 }
@@ -445,7 +451,6 @@ esp_err_t mesh_netifs_start(bool is_root)
         }
         netif_sta = create_mesh_link_sta();
         ESP_ERROR_CHECK(esp_netif_dhcps_start(netif_sta));
-        ip_napt_enable(g_nonmesh_netif_subnet_ip.ip.addr, 1);
 
         // now we create a mesh driver and attach it to the existing netif
         mesh_netif_driver_t driver = mesh_create_if_driver(false, false);
@@ -514,15 +519,12 @@ int do_convert_to_entrypoint_node(int argc, char* argv[]) {
             .driver = NULL,
             .stack = ESP_NETIF_NETSTACK_DEFAULT_WIFI_AP };
 
-    esp_netif_t *netif_myap = esp_netif_new(&cfg);
-    assert(netif_myap);
-    ESP_ERROR_CHECK(esp_netif_attach_wifi_ap(netif_myap));
+    netif_ap = esp_netif_new(&cfg);
+    assert(netif_ap);
+    ESP_ERROR_CHECK(esp_netif_attach_wifi_ap(netif_ap));
     ESP_ERROR_CHECK(esp_wifi_set_default_wifi_ap_handlers());
-    uint8_t mac[MAC_ADDR_LEN];
-    esp_wifi_get_mac(WIFI_IF_AP, mac);
-    esp_netif_set_mac(netif_myap, mac);
-    esp_netif_action_start(netif_myap, NULL, 0, NULL);
-    esp_netif_action_connected(netif_myap, NULL, 0, NULL);
+    esp_netif_action_start(netif_ap, NULL, 0, NULL);
+    esp_netif_action_connected(netif_ap, NULL, 0, NULL);
     wifi_config_t wifi_config = {
             .ap = {
                     .ssid = "entrypoint",
@@ -532,20 +534,76 @@ int do_convert_to_entrypoint_node(int argc, char* argv[]) {
             }
     };
     ESP_ERROR_CHECK(esp_wifi_set_config(WIFI_IF_AP, &wifi_config));
+    leaf_mode = true;
+    //netif_set_status_callback(netif_myap, status_callback);
+    return 0;
+}
 
-    struct netif *netif;
-    NETIF_FOREACH(netif) {
-        ESP_LOGI(TAG, "Interface %s, idx %d, IPv4: " IPSTR, netif->name, netif_name_to_index(netif->name), IP2STR(&netif->ip_addr.u_addr.ip4));
+int do_reconfigure_stas(int argc, char* argv[]) {
+    if(netif_sta != NULL){
+        ESP_LOGI(TAG, "Configuring IP stack on netif_sta");
+        esp_netif_set_ip_info(netif_sta, &g_nonmesh_netif_subnet_ip);
+        struct netif *netif;
+        NETIF_FOREACH(netif) {
+            ESP_LOGI(TAG, "Interface %s, idx %d, IPv4: " IPSTR, netif->name, netif_name_to_index(netif->name), IP2STR(&netif->ip_addr.u_addr.ip4));
+        }
+        ESP_LOGI(TAG, "Configuring starting DHCP server on netif_sta");
+        ESP_ERROR_CHECK(esp_netif_dhcps_start(netif_sta));
+    } else {
+        ESP_LOGW(TAG, "netif_sta not set");
     }
-    //ESP_ERROR_CHECK(esp_netif_dhcps_start(netif_myap));
+    return 0;
+}
+
+int do_make_leaf(int argc, char* argv[]) {
+    ESP_LOGI(TAG, "Setting mesh node as leaf");
+    esp_mesh_set_type(MESH_LEAF);
+    return 0;
+}
+
+int enable_nat_ap(int argc, char* argv[]){
+    if(netif_ap != NULL){
+        ESP_LOGI(TAG, "Enabling NAT on AP interface");
+        ip_napt_enable(g_nonmesh_netif_subnet_ip.ip.addr, 1);
+    } else {
+        ESP_LOGW(TAG, "Unable to enable NAT on AP interface");
+    }
+    return 0;
+}
+
+int disable_nat_sta(int argc, char* argv[]){
+    ESP_LOGI(TAG, "Disabling NAT on STA interface");
+    ip_napt_enable(ESP_IP4TOADDR( 172, 16, 0, 2), 0);
     return 0;
 }
 
 void register_leaf_command() {
-    esp_console_cmd_t quit_command = {
-            .command = "leaf",
+    esp_console_cmd_t ap_command = {
+            .command = "ap",
             .help = "Convert to entrypoint node (create AP)",
             .func = &do_convert_to_entrypoint_node
     };
-    ESP_ERROR_CHECK(esp_console_cmd_register(&quit_command));
+    ESP_ERROR_CHECK(esp_console_cmd_register(&ap_command));
+
+    esp_console_cmd_t leaf_command = {
+            .command = "leaf",
+            .help = "Convert node to leaf node (disable softAP to be able to reuse it)",
+            .func = &do_make_leaf
+    };
+    ESP_ERROR_CHECK(esp_console_cmd_register(&leaf_command));
+
+    esp_console_cmd_t napt_command = {
+            .command = "napt",
+            .help = "Enable PNAT on AP interface",
+            .func = &enable_nat_ap
+    };
+    ESP_ERROR_CHECK(esp_console_cmd_register(&napt_command));
+
+    esp_console_cmd_t denapt_command = {
+            .command = "denapt",
+            .help = "Disable PNAT on STA interface",
+            .func = &disable_nat_sta
+    };
+    ESP_ERROR_CHECK(esp_console_cmd_register(&denapt_command));
+
 }

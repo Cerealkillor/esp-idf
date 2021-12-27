@@ -30,7 +30,7 @@ typedef void (mesh_raw_recv_cb_t)(mesh_addr_t *from, mesh_data_t *data);
  *
  * @return ESP_OK on success
  */
-esp_err_t mesh_netifs_init(mesh_raw_recv_cb_t *cb);
+esp_err_t mesh_netifs_init();
 
 /**
  * @brief Destroy the netifs and related structures

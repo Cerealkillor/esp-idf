@@ -123,7 +123,7 @@ static int do_ping_cmd(int argc, char **argv)
         freeaddrinfo(res);
     }
     config.target_addr = target_addr;
-    //config.interface = WIFI_IF_AP;
+    config.interface = 0;
 
     /* set callback functions */
     esp_ping_callbacks_t cbs = {

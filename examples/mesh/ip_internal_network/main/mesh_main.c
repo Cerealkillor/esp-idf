@@ -9,6 +9,7 @@
 #include <string.h>
 #include <esp_console.h>
 #include <lwip/lwip_napt.h>
+#include <lwip/netif.h>
 #include "esp_wifi.h"
 #include "esp_system.h"
 #include "esp_event.h"
@@ -40,10 +41,6 @@ void register_ping_command(void);
 void mesh_event_handler(void *arg, esp_event_base_t event_base, int32_t event_id, void *event_data);
 void register_leaf_command();
 
-void static recv_cb(mesh_addr_t *from, mesh_data_t *data)
-{
-}
-
 void ip_event_handler(void *arg, esp_event_base_t event_base,
                       int32_t event_id, void *event_data)
 {
@@ -55,10 +52,6 @@ void ip_event_handler(void *arg, esp_event_base_t event_base,
     esp_netif_dns_info_t dns;
     ESP_ERROR_CHECK(esp_netif_get_dns_info(netif, ESP_NETIF_DNS_MAIN, &dns));
     mesh_netif_start_root_ap(esp_mesh_is_root(), dns.ip.u_addr.ip4.addr);
-    if(!esp_mesh_is_root()){
-        ESP_LOGI(MESH_TAG, "Enabling NAT for IP:" IPSTR, IP2STR(&event->ip_info.ip));
-        ip_napt_enable(event->ip_info.ip.addr , 1);
-    }
 #endif
 }
 
@@ -89,6 +82,10 @@ static void print_stats(void* args){
                  esp_mesh_is_root() ? "ROOT" : "NODE", esp_mesh_get_layer(), esp_mesh_get_type(),
                  stamac[3], stamac[4], stamac[5],
                  IP2STR(&s_current_ip), MAC2STR(apmac), MAC2STR(stamac));
+        struct netif *netif;
+        NETIF_FOREACH(netif) {
+            ESP_LOGI(MESH_TAG, "Interface %s, NAPT: %d, IPv4: " IPSTR, netif->name, netif->napt, IP2STR(&netif->ip_addr.u_addr.ip4));
+        }
         vTaskDelay(1000 / portTICK_RATE_MS);
     }
 }
@@ -101,7 +98,7 @@ void app_main(void)
     /*  event initialization */
     ESP_ERROR_CHECK(esp_event_loop_create_default());
     /*  crete network interfaces for mesh (only station instance saved for further manipulation, soft AP instance ignored */
-    ESP_ERROR_CHECK(mesh_netifs_init(recv_cb));
+    ESP_ERROR_CHECK(mesh_netifs_init());
 
     /*  wifi initialization */
     wifi_init_config_t config = WIFI_INIT_CONFIG_DEFAULT();
